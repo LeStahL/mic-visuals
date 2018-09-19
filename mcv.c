@@ -81,6 +81,12 @@ int samplerate = 44100;
 WAVEHDR headers[2];
 HWAVEIN wi;
 
+#define NFFT 512
+
+//FFTW3 globals
+fftw_real in[MFFT], out[NFFT], power_spectrum[NFFT/2+1];
+rfftw_plan p;
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch(uMsg)
@@ -118,11 +124,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 if(headers[i].dwFlags & WHDR_DONE)
                 {
                     scale = 0.;
-                    for(int j = 0 ; j<512; ++j)
-                    {
-                        scale += ABS((float)(*(short *)(headers[i].lpData+2*j))/32767.);
-                    }
-                    scale *= 1.;
+                    for(int j = 0 ; j<NFFT; ++j)
+                        in[j] = ((float)(*(short *)(headers[i].lpData+2*j))/32767.);
+                    rfftw_one(p, in, out);
+                    power_spectrum[0] = out[0]*out[0];
+                    for (k = 1; k < (N+1)/2; ++k)  /* (k < N/2 rounded up) */
+                    power_spectrum[k] = out[k]*out[k] + out[N-k]*out[N-k];
+                    if (N % 2 == 0) /* N is even */
+                        power_spectrum[N/2] = out[N/2]*out[N/2];  /* Nyquist freq. */
+                    
+                    scale = power_spectrum[0];
+                    
                     printf("scale: %le\n", scale);
                     
                     
@@ -277,6 +289,9 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     GetSystemTime(&st_start);
     t_start = (float)st_start.wMinute*60.+(float)st_start.wSecond+(float)st_start.wMilliseconds/1000.;
     
+    //FFTW3 Setup
+    p = rfftw_create_plan(N, FFTW_REAL_TO_COMPLEX, FFTW_ESTIMATE);
+    
     // Init sound capture
     WAVEFORMATEX wfx;
     wfx.wFormatTag = WAVE_FORMAT_PCM;     
@@ -294,7 +309,7 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
               );
     printf("WaveInOpen: %d\n", result);
     
-    int bsize = 512*wfx.wBitsPerSample*wfx.nChannels/8;
+    int bsize = NFFT*wfx.wBitsPerSample*wfx.nChannels/8;
     char * buffers = (char*)malloc(2*bsize);
 
     for(int i = 0; i < 2; ++i)
