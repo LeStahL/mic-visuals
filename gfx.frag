@@ -22,6 +22,7 @@
 uniform float iTime;
 uniform vec2 iResolution;
 uniform float iScale;
+uniform float iNBeats;
  
 const float pi = acos(-1.);
 const vec2 c = vec2(1.,0.);
@@ -111,7 +112,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
             len = abs(.005*float(i)+dr),
             width = abs(.015+.005*rand(index*c.xx+.4));
 
-        vec4 sda = vec4(rect(q-r_inner*c.xy, len*c.xy+width*c.yx), synthcol(((q.x-r_inner)/.05+(q.y/2./pi)), iTime+sin(iTime+1.*float(i))));
+        vec4 sda = vec4(rect(q-r_inner*c.xy, len*c.xy+width*c.yx), synthcol(((q.x-r_inner)/.05+(q.y/2./pi)),iNBeats));
         sdf = mix(sdf, sda, step(sda.x, sdf.x));
     }
     

@@ -27,6 +27,7 @@ int _fltused = 0;
 #include <GL/gl.h>
 #include "glext.h"
 
+#include <complex.h> 
 #include "fftw3.h"
 
 //TODO: remove
@@ -73,10 +74,10 @@ PFNGLNAMEDRENDERBUFFERSTORAGEEXTPROC glNamedRenderbufferStorageEXT;
 
 //Shader globals
 int w = 1920, h = 1080;
-int gfx_program, gfx_time_location, gfx_resolution_location, gfx_scale_location;
+int gfx_program, gfx_time_location, gfx_resolution_location, gfx_scale_location, gfx_nbeats_location;
 
 //Demo globals
-float t_start = 0., scale;
+float t_start = 0., scale, max = -1., nbeats = 0.;
 int samplerate = 44100;
 WAVEHDR headers[2];
 HWAVEIN wi;
@@ -84,8 +85,9 @@ HWAVEIN wi;
 #define NFFT 512
 
 //FFTW3 globals
-fftw_real in[MFFT], out[NFFT], power_spectrum[NFFT/2+1];
-rfftw_plan p;
+fftw_complex *in, *out;
+fftw_plan p;
+float power_spectrum[NFFT];
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -105,6 +107,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             glUniform1f(gfx_time_location, t_now-t_start);
             glUniform2f(gfx_resolution_location, w, h);
             glUniform1f(gfx_scale_location, scale);
+            glUniform1f(gfx_nbeats_location, nbeats);
             
             glBegin(GL_QUADS);
             
@@ -124,19 +127,27 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 if(headers[i].dwFlags & WHDR_DONE)
                 {
                     scale = 0.;
-                    for(int j = 0 ; j<NFFT; ++j)
-                        in[j] = ((float)(*(short *)(headers[i].lpData+2*j))/32767.);
-                    rfftw_one(p, in, out);
-                    power_spectrum[0] = out[0]*out[0];
-                    for (k = 1; k < (N+1)/2; ++k)  /* (k < N/2 rounded up) */
-                    power_spectrum[k] = out[k]*out[k] + out[N-k]*out[N-k];
-                    if (N % 2 == 0) /* N is even */
-                        power_spectrum[N/2] = out[N/2]*out[N/2];  /* Nyquist freq. */
+                    for(int j=0; j<NFFT; ++j)
+                    {
+                        in[j][0] = ((float)(*(short *)(headers[i].lpData+2*j))/32767.);
+                        in[j][1] = 0.;
+                    }
+                    fftw_execute(p);
                     
-                    scale = power_spectrum[0];
+//                     float max = -1.;
+                    for(int j=0; j<NFFT; ++j)
+                        power_spectrum[j] = out[j][0]*out[j][0]+out[j][1]*out[j][1];
+                    for(int j=0; j<NFFT/10; ++j)
+                    {
+                        scale += power_spectrum[j];
+//                         if(power_spectrum[j]>max)max=power_spectrum[j];
+                    }
+                    scale/=10.;
                     
-                    printf("scale: %le\n", scale);
+                    if(scale > 5.e-1)
+                        nbeats += 1.;
                     
+                    printf("nbeats: %le\n", nbeats);
                     
                     headers[i].dwFlags = 0;
                     headers[i].dwBytesRecorded = 0;
@@ -258,6 +269,7 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
 #undef VAR_IRESOLUTION
 #undef VAR_ITIME
 #undef VAR_ISCALE
+#undef VAR_NBEATS
 #include "gfx.h"
 #ifndef VAR_IRESOLUTION
 #define VAR_IRESOLUTION "iResolution"
@@ -265,6 +277,8 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
 #define VAR_ITIME "iTime"
 #ifndef VAR_ISCALE
 #define VAR_ISCALE "iScale"
+#ifndef VAR_NBEATS
+#define VAR_NBEATS "iNBeats"
     int gfx_size = strlen(gfx_frag),
         gfx_handle = glCreateShader(GL_FRAGMENT_SHADER);
     gfx_program = glCreateProgram();
@@ -276,6 +290,8 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     gfx_time_location =  glGetUniformLocation(gfx_program, VAR_ITIME);
     gfx_resolution_location = glGetUniformLocation(gfx_program, VAR_IRESOLUTION);
     gfx_scale_location = glGetUniformLocation(gfx_program, VAR_ISCALE);
+    gfx_nbeats_location = glGetUniformLocation(gfx_program, VAR_NBEATS);
+#endif
 #endif
 #endif
 #endif
@@ -290,7 +306,9 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     t_start = (float)st_start.wMinute*60.+(float)st_start.wSecond+(float)st_start.wMilliseconds/1000.;
     
     //FFTW3 Setup
-    p = rfftw_create_plan(N, FFTW_REAL_TO_COMPLEX, FFTW_ESTIMATE);
+    in = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * NFFT);
+    out = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * NFFT);
+    p = fftw_plan_dft_1d(NFFT, in, out, FFTW_FORWARD, FFTW_ESTIMATE);
     
     // Init sound capture
     WAVEFORMATEX wfx;
