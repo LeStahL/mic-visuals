@@ -23,6 +23,7 @@ uniform float iTime;
 uniform vec2 iResolution;
 uniform float iScale;
 uniform float iNBeats;
+uniform float iHighScale;
  
 const float pi = acos(-1.);
 const vec2 c = vec2(1.,0.);
@@ -73,18 +74,52 @@ float rect(vec2 x, vec2 b)
 
 vec3 synthcol(float scale, float phase)
 {
-    vec3 c2 = vec3(207.,30.,102.)/255.,
-        c3 = vec3(245., 194., 87.)/255.;
+    vec3 c2 = .5*vec3(rand(phase*c.xx), rand(phase*c.xx+1.), rand(phase*c.xx+2.))+.5;
     mat3 r1 = rot((5.e-1*phase)*vec3(1.1,1.3,1.5));
     return 
         (
-            1.1*mix
+            .5*rand(phase*c.xx)*1.1*mix
             (
-                -(cross(c2, r1*c2)),
-                -(r1*c2), 
+                mix(-(cross(c2, r1*c2)),c.yyy, .5*scale),
+                mix(c.yyy, -(r1*c2), .5*scale), 
                 scale
             )
         );
+}
+
+float cr(vec2 x, float r, float w)
+{
+    return abs(length(x)-r)-w;
+}
+
+float cs(vec2 x, float r0, float w, float p0, float p1)
+{
+    float r = length(x), p = acos(x.x/r)*step(0.,x.y)-acos(x.x/r)*step(x.y,0.);
+    p = clamp(p, p0, p1);
+    vec2 y = r0*vec2(cos(p), sin(p));
+    return length(x-y)-w;
+}
+
+float b(vec2 x, vec2 a, vec2 b, float w)
+{
+    vec2 d = b-a;
+    return length(x-mix(a, b, clamp(dot(x-a, d)/dot(d,d), 0., 1.)))-w;
+}
+
+mat3 R(vec3 t)
+{
+    vec3 ct = cos(t), st = sin(t);
+    return mat3(c.xyyy, ct.x, st.x, 0., -st.x, ct.x)
+        *mat3(ct.y, 0., -st.y, c.yxy, st.y, 0., ct.y)
+        *mat3(ct.z, st.z, 0., -st.z, ct.z, c.yyyx);
+}
+
+vec4 add2(vec4 sdf, vec4 sda)
+{
+    return vec4(
+        min(sdf.x, sda.x), 
+        mix(sda.gba, sdf.gba, smoothstep(-1.5/iResolution.y, 1.5/iResolution.y, sda.x))
+    );
 }
 
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
@@ -97,7 +132,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     float N = 128.,
         r_inner = .2;
     
-    for(int i=0; i<12; ++i)
+    for(float i=10.; i>=0.; i-=1.)
     {
         uv = rot(uv, 1.1);
         vec2 p = vec2(length(uv), atan(uv.y/uv.x)-float(i)*.1*iTime),
@@ -113,10 +148,19 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
             width = abs(.015+.005*rand(index*c.xx+.4));
 
         vec4 sda = vec4(rect(q-r_inner*c.xy, len*c.xy+width*c.yx), synthcol(((q.x-r_inner)/.05+(q.y/2./pi)),iNBeats));
-        sdf = mix(sdf, sda, step(sda.x, sdf.x));
+        sdf = add2(sdf, sda);
     }
     
-    vec3 col = sdf.gba*step(sdf.x, 0.);
+    //210
+    vec2 x = uv*(2.+iScale);
+    float sd = min(cr(x-.125*c.xy, .125, .04), cs(x+.125*c.xy, .125, .04, -pi/2., pi/2.));
+    sd = min(sd, b(x, -.125*c.yx, .125*c.yx, .04));
+    vec4 sda = vec4(sd, 2.*synthcol(1.,iNBeats));
+    sdf = add2(sdf, sda);
+	vec4 sdb = vec4(abs(sd-.01)-.005, 2.*synthcol(0.,iNBeats));
+    sdf = add2(sdf, sdb);
+
+    vec3 col = sdf.gba*smoothstep(1.5/iResolution.y, -1.5/iResolution.y, sdf.x);
 
     fragColor = vec4(col,1.0);
 }

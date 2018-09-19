@@ -72,12 +72,28 @@ PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer;
 PFNGLFRAMEBUFFERTEXTURE2DPROC glFramebufferTexture2D;
 PFNGLNAMEDRENDERBUFFERSTORAGEEXTPROC glNamedRenderbufferStorageEXT;
 
+void debug(int shader_handle)
+{
+    int compile_status = 0;
+    glGetShaderiv(shader_handle, GL_COMPILE_STATUS, &compile_status);
+    if(compile_status != GL_TRUE)
+    {
+        printf("FAILED.\n");
+        int len = 12;
+        glGetShaderiv(shader_handle, GL_INFO_LOG_LENGTH, &len);
+        printf("log length: %d\n", len);
+        GLchar CompileLog[1024];
+        glGetShaderInfoLog(shader_handle, len, NULL, CompileLog);
+        printf("error: %s\n", CompileLog);
+    }
+}
+
 //Shader globals
 int w = 1920, h = 1080;
-int gfx_program, gfx_time_location, gfx_resolution_location, gfx_scale_location, gfx_nbeats_location;
+int gfx_program, gfx_time_location, gfx_resolution_location, gfx_scale_location, gfx_nbeats_location, gfx_highscale_location;
 
 //Demo globals
-float t_start = 0., scale, max = -1., nbeats = 0.;
+float t_start = 0., scale = 0., max = -1., nbeats = 0., highscale=0.;
 int samplerate = 44100;
 WAVEHDR headers[2];
 HWAVEIN wi;
@@ -108,6 +124,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             glUniform2f(gfx_resolution_location, w, h);
             glUniform1f(gfx_scale_location, scale);
             glUniform1f(gfx_nbeats_location, nbeats);
+            glUniform1f(gfx_highscale_location, highscale);
             
             glBegin(GL_QUADS);
             
@@ -127,6 +144,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 if(headers[i].dwFlags & WHDR_DONE)
                 {
                     scale = 0.;
+                    highscale = 0.;
                     for(int j=0; j<NFFT; ++j)
                     {
                         in[j][0] = ((float)(*(short *)(headers[i].lpData+2*j))/32767.);
@@ -142,12 +160,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                         scale += power_spectrum[j];
 //                         if(power_spectrum[j]>max)max=power_spectrum[j];
                     }
-                    scale/=10.;
+                    for(int j=5*NFFT/10; j<NFFT; ++j)
+                    {
+                        highscale += power_spectrum[j];
+                    }
+                    scale*=.5;
+                    highscale *= .5;
                     
                     if(scale > 5.e-1)
                         nbeats += 1.;
                     
-                    printf("nbeats: %le\n", nbeats);
+//                     printf("nbeats: %le\n", nbeats);
                     
                     headers[i].dwFlags = 0;
                     headers[i].dwBytesRecorded = 0;
@@ -279,11 +302,14 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
 #define VAR_ISCALE "iScale"
 #ifndef VAR_NBEATS
 #define VAR_NBEATS "iNBeats"
+#ifndef VAR_HIGHSCALE
+#define VAR_HIGHSCALE "iHighScale"
     int gfx_size = strlen(gfx_frag),
         gfx_handle = glCreateShader(GL_FRAGMENT_SHADER);
     gfx_program = glCreateProgram();
     glShaderSource(gfx_handle, 1, (GLchar **)&gfx_frag, &gfx_size);
     glCompileShader(gfx_handle);
+    debug(gfx_handle);
     glAttachShader(gfx_program, gfx_handle);
     glLinkProgram(gfx_program);
     glUseProgram(gfx_program);
@@ -291,6 +317,8 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     gfx_resolution_location = glGetUniformLocation(gfx_program, VAR_IRESOLUTION);
     gfx_scale_location = glGetUniformLocation(gfx_program, VAR_ISCALE);
     gfx_nbeats_location = glGetUniformLocation(gfx_program, VAR_NBEATS);
+    gfx_highscale_location = glGetUniformLocation(gfx_program, VAR_HIGHSCALE);
+#endif
 #endif
 #endif
 #endif
