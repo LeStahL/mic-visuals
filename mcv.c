@@ -17,6 +17,8 @@
 
 int _fltused = 0;
 
+#define ABS(x) ((x)<0?(-x):(x))
+
 #define WIN32_LEAN_AND_MEAN
 #define VC_EXTRALEAN
 #include <windows.h>
@@ -24,6 +26,11 @@ int _fltused = 0;
 
 #include <GL/gl.h>
 #include "glext.h"
+
+#include "fftw3.h"
+
+//TODO: remove
+#include <stdio.h>
 
 // Standard library and CRT rewrite for saving executable size
 void *memset(void *ptr, int value, size_t num)
@@ -69,7 +76,10 @@ int w = 1920, h = 1080;
 int gfx_program, gfx_time_location, gfx_resolution_location, gfx_scale_location;
 
 //Demo globals
-float t_start = 0.;
+float t_start = 0., scale;
+int samplerate = 44100;
+WAVEHDR headers[2];
+HWAVEIN wi;
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -88,6 +98,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             
             glUniform1f(gfx_time_location, t_now-t_start);
             glUniform2f(gfx_resolution_location, w, h);
+            glUniform1f(gfx_scale_location, scale);
             
             glBegin(GL_QUADS);
             
@@ -101,6 +112,27 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             glFlush();
             
             SwapBuffers(hdc);
+            
+            for(int i=0; i<2; ++i)
+            {
+                if(headers[i].dwFlags & WHDR_DONE)
+                {
+                    scale = 0.;
+                    for(int j = 0 ; j<512; ++j)
+                    {
+                        scale += ABS((float)(*(short *)(headers[i].lpData+2*j))/32767.);
+                    }
+                    scale *= 1.;
+                    printf("scale: %le\n", scale);
+                    
+                    
+                    headers[i].dwFlags = 0;
+                    headers[i].dwBytesRecorded = 0;
+
+                    waveInPrepareHeader(wi, &headers[i], sizeof(headers[i]));
+                    waveInAddBuffer(wi, &headers[i], sizeof(headers[i]));
+                }
+            }
             break;
             
         default:
@@ -112,6 +144,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
 {
+    //TODO: remove
+    AllocConsole();
+    freopen("CONIN$", "r", stdin);
+    freopen("CONOUT$", "w", stdout);
+    freopen("CONOUT$", "w", stderr);
+    
     CHAR WindowClass[]  = "Team210 Demo Window";
     
     WNDCLASSEX wc = { 0 };
@@ -229,16 +267,49 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
 #endif
 #endif
 #endif
-    
     glViewport(0, 0, w, h);
     
-    // Set render timer
+    // Set render timer to 60 fps
     UINT_PTR t = SetTimer(hwnd, 1, 1000./60., NULL);
     
     // Get start time for relative time sync
     SYSTEMTIME st_start;
     GetSystemTime(&st_start);
     t_start = (float)st_start.wMinute*60.+(float)st_start.wSecond+(float)st_start.wMilliseconds/1000.;
+    
+    // Init sound capture
+    WAVEFORMATEX wfx;
+    wfx.wFormatTag = WAVE_FORMAT_PCM;     
+    wfx.nChannels = 1;                    
+    wfx.nSamplesPerSec = samplerate;      
+    wfx.wBitsPerSample = 16;                
+    wfx.nBlockAlign = wfx.wBitsPerSample * wfx.nChannels / 8;
+    wfx.nAvgBytesPerSec = wfx.nBlockAlign * wfx.nSamplesPerSec;
+    
+    int result = waveInOpen(&wi,            
+                WAVE_MAPPER,    
+                &wfx,           
+                NULL,NULL,      
+                CALLBACK_NULL | WAVE_FORMAT_DIRECT  
+              );
+    printf("WaveInOpen: %d\n", result);
+    
+    int bsize = 512*wfx.wBitsPerSample*wfx.nChannels/8;
+    char * buffers = (char*)malloc(2*bsize);
+
+    for(int i = 0; i < 2; ++i)
+    {
+        printf("Buffer i:\n");
+        headers[i].lpData =         buffers+i*bsize;             
+        headers[i].dwBufferLength = bsize;
+        result = waveInPrepareHeader(wi, &headers[i], sizeof(headers[i]));
+        printf("WaveInPrepareHeader: %d\n", result);
+        result = waveInAddBuffer(wi, &headers[i], sizeof(headers[i]));
+        printf("WaveInAddBuffer: %d\n", result);
+    }
+    
+    result = waveInStart(wi);
+    printf("WaveInStart: %d\n", result);
     
     // Main loop
     MSG msg;

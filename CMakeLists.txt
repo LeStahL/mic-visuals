@@ -22,6 +22,7 @@ if(WIN32)
     add_definitions(/Gy /O1 /fp:fast /GR- /GS- /MT)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /ENTRY:demo /SUBSYSTEM:Windows  /OPT:REF  /OPT:ICF=10 /VERBOSE /NODEFAULTLIB") 
     add_executable(mic-visuals mcv.c)
-    target_link_libraries(mic-visuals opengl32.lib Winmm.lib)
+    # for debug output: User32.lib ucrt.lib msvcrt.lib
+    target_link_libraries(mic-visuals opengl32.lib Winmm.lib User32.lib ucrt.lib msvcrt.lib)
 endif()
 
