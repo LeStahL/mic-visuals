@@ -86,6 +86,8 @@ void debug(int shader_handle)
         glGetShaderInfoLog(shader_handle, len, NULL, CompileLog);
         printf("error: %s\n", CompileLog);
     }
+    else 
+        printf("shader compilation successful.\n");
 }
 
 //Shader globals
@@ -122,11 +124,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 case VK_LEFT:
                     --index;
                     if(index <0)index = nfiles-1;
+                    glUseProgram(programs[index]);
+                    printf("index %d", index);
                     break;
                     
                 case VK_RIGHT:
                     ++index;
                     if(index == nfiles)index = 0;
+                    glUseProgram(programs[index]);
+                    printf("index %d", index);
                     break;
             }
             break;
@@ -308,9 +314,7 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     
     // Browse shaders folder for shaders
     WIN32_FIND_DATA data;
-    HANDLE hfile = FindFirstFile(".\\shaders\\*", &data);
-    FindNextFile(hfile, &data);
-    FindNextFile(hfile, &data);
+    HANDLE hfile = FindFirstFile(".\\shaders\\*.frag", &data);
     char **filenames = (char **)malloc(sizeof(char*));
     filenames[0] = (char*)malloc(strlen(data.cFileName)+2+strlen(".\\shaders\\"));
     sprintf(filenames[0], ".\\shaders\\%s", data.cFileName);
@@ -321,7 +325,7 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
         ++nfiles;
         filenames = (char**)realloc(filenames, nfiles*sizeof(char*));
         filenames[nfiles-1] = (char*)malloc(strlen(data.cFileName)+2+strlen(".\\shaders\\"));
-        sprintf(filenames[0], ".\\shaders\\%s", data.cFileName);
+        sprintf(filenames[nfiles-1], ".\\shaders\\%s", data.cFileName);
         printf("Found %s\n", filenames[nfiles-1]);
     } 
     FindClose(hfile);
@@ -348,8 +352,6 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
         fread(source, 1, filesize, f);
         fclose(f);
         
-        printf("Source\n\n%s\n\n", source);
-        
         handles[i] = glCreateShader(GL_FRAGMENT_SHADER);
         programs[i] = glCreateProgram();
         glShaderSource(handles[i], 1, (GLchar **)&source, &filesize);
@@ -366,6 +368,7 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
         highscale_locations[i] = glGetUniformLocation(programs[i], "iHighScale");
     }
     
+    glUseProgram(programs[0]);
     glViewport(0, 0, w, h);
     
     // Set render timer to 60 fps
