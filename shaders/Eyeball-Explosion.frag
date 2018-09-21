@@ -76,9 +76,12 @@ vec3 synthcol(float scale, float phase)
 {
     vec3 c2 = .5*vec3(rand(phase*c.xx), rand(phase*c.xx+1.), rand(phase*c.xx+2.))+.5;
     mat3 r1 = rot((5.e-1*phase)*vec3(1.1,1.3,1.5));
+    float sc = .5*rand(phase*c.xx);
+    if(abs(sc) < .2)
+        sc = sign(sc)*.2;
     return 
         (
-            .5*rand(phase*c.xx)*1.1*mix
+            sc*1.1*mix
             (
                 mix(-(cross(c2, r1*c2)),c.yyy, .5*scale),
                 mix(c.yyy, -(r1*c2), .5*scale), 
