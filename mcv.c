@@ -89,9 +89,12 @@ void debug(int shader_handle)
 }
 
 //Shader globals
-int w = 1920, h = 1080;
-int gfx_program, gfx_time_location, gfx_resolution_location, gfx_scale_location, gfx_nbeats_location, gfx_highscale_location;
-
+int w = 1920, h = 1080,
+    index=0, nfiles=0,
+    *handles,*programs,*time_locations,
+    *resolution_locations,*scale_locations,*nbeats_locations,
+    *highscale_locations;
+    
 //Demo globals
 float t_start = 0., scale = 0., max = -1., nbeats = 0., highscale=0.;
 int samplerate = 44100;
@@ -110,7 +113,22 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     switch(uMsg)
     {
         case WM_KEYDOWN:
-            ExitProcess(0);
+            switch(wParam)
+            {
+                case VK_ESCAPE:
+                    ExitProcess(0);
+                    break;
+                    
+                case VK_LEFT:
+                    --index;
+                    if(index <0)index = nfiles-1;
+                    break;
+                    
+                case VK_RIGHT:
+                    ++index;
+                    if(index == nfiles)index = 0;
+                    break;
+            }
             break;
             
         case WM_TIMER:
@@ -120,11 +138,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             GetSystemTime(&st_now);
             float t_now = (float)st_now.wMinute*60.+(float)st_now.wSecond+(float)st_now.wMilliseconds/1000.;
             
-            glUniform1f(gfx_time_location, t_now-t_start);
-            glUniform2f(gfx_resolution_location, w, h);
-            glUniform1f(gfx_scale_location, scale);
-            glUniform1f(gfx_nbeats_location, nbeats);
-            glUniform1f(gfx_highscale_location, highscale);
+            glUniform1f(time_locations[index], t_now-t_start);
+            glUniform2f(resolution_locations[index], w, h);
+            glUniform1f(scale_locations[index], scale);
+            glUniform1f(nbeats_locations[index], nbeats);
+            glUniform1f(highscale_locations[index], highscale);
             
             glBegin(GL_QUADS);
             
@@ -155,7 +173,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 //                     float max = -1.;
                     for(int j=0; j<NFFT; ++j)
                         power_spectrum[j] = out[j][0]*out[j][0]+out[j][1]*out[j][1];
-                    for(int j=0; j<NFFT/10; ++j)
+                    for(int j=0; j<NFFT/5; ++j)
                     {
                         scale += power_spectrum[j];
 //                         if(power_spectrum[j]>max)max=power_spectrum[j];
@@ -288,41 +306,66 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     glFramebufferTexture2D = (PFNGLFRAMEBUFFERTEXTURE2DPROC) wglGetProcAddress("glFramebufferTexture2D");
     glNamedRenderbufferStorageEXT = (PFNGLNAMEDRENDERBUFFERSTORAGEEXTPROC) wglGetProcAddress("glNamedRenderbufferStorage");
     
-    // Init gfx
-#undef VAR_IRESOLUTION
-#undef VAR_ITIME
-#undef VAR_ISCALE
-#undef VAR_NBEATS
-#include "gfx.h"
-#ifndef VAR_IRESOLUTION
-#define VAR_IRESOLUTION "iResolution"
-#ifndef VAR_ITIME
-#define VAR_ITIME "iTime"
-#ifndef VAR_ISCALE
-#define VAR_ISCALE "iScale"
-#ifndef VAR_NBEATS
-#define VAR_NBEATS "iNBeats"
-#ifndef VAR_HIGHSCALE
-#define VAR_HIGHSCALE "iHighScale"
-    int gfx_size = strlen(gfx_frag),
-        gfx_handle = glCreateShader(GL_FRAGMENT_SHADER);
-    gfx_program = glCreateProgram();
-    glShaderSource(gfx_handle, 1, (GLchar **)&gfx_frag, &gfx_size);
-    glCompileShader(gfx_handle);
-    debug(gfx_handle);
-    glAttachShader(gfx_program, gfx_handle);
-    glLinkProgram(gfx_program);
-    glUseProgram(gfx_program);
-    gfx_time_location =  glGetUniformLocation(gfx_program, VAR_ITIME);
-    gfx_resolution_location = glGetUniformLocation(gfx_program, VAR_IRESOLUTION);
-    gfx_scale_location = glGetUniformLocation(gfx_program, VAR_ISCALE);
-    gfx_nbeats_location = glGetUniformLocation(gfx_program, VAR_NBEATS);
-    gfx_highscale_location = glGetUniformLocation(gfx_program, VAR_HIGHSCALE);
-#endif
-#endif
-#endif
-#endif
-#endif
+    // Browse shaders folder for shaders
+    WIN32_FIND_DATA data;
+    HANDLE hfile = FindFirstFile(".\\shaders\\*", &data);
+    FindNextFile(hfile, &data);
+    FindNextFile(hfile, &data);
+    char **filenames = (char **)malloc(sizeof(char*));
+    filenames[0] = (char*)malloc(strlen(data.cFileName)+2+strlen(".\\shaders\\"));
+    sprintf(filenames[0], ".\\shaders\\%s", data.cFileName);
+    printf("Found %s\n", filenames[0]);
+    nfiles = 1;
+    while(FindNextFile(hfile, &data))
+    {
+        ++nfiles;
+        filenames = (char**)realloc(filenames, nfiles*sizeof(char*));
+        filenames[nfiles-1] = (char*)malloc(strlen(data.cFileName)+2+strlen(".\\shaders\\"));
+        sprintf(filenames[0], ".\\shaders\\%s", data.cFileName);
+        printf("Found %s\n", filenames[nfiles-1]);
+    } 
+    FindClose(hfile);
+    printf("Read %d files.\n", nfiles);
+    
+    // Load shaders
+    handles = (int*)malloc(nfiles*sizeof(int));
+    programs = (int*)malloc(nfiles*sizeof(int));
+    time_locations = (int*)malloc(nfiles*sizeof(int));
+    resolution_locations = (int*)malloc(nfiles*sizeof(int));
+    scale_locations = (int*)malloc(nfiles*sizeof(int));
+    nbeats_locations = (int*)malloc(nfiles*sizeof(int));
+    highscale_locations = (int*)malloc(nfiles*sizeof(int));
+    for(int i=0; i<nfiles; ++i)
+    {
+        printf("Loading Shader %d\n", i);
+        
+        FILE *f = fopen(filenames[i], "rt");
+        if(f == 0)printf("Failed to open file: %s\n", filenames[i]);
+        fseek(f, 0, SEEK_END);
+        int filesize = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        char *source = (char*)malloc(filesize+2);
+        fread(source, 1, filesize, f);
+        fclose(f);
+        
+        printf("Source\n\n%s\n\n", source);
+        
+        handles[i] = glCreateShader(GL_FRAGMENT_SHADER);
+        programs[i] = glCreateProgram();
+        glShaderSource(handles[i], 1, (GLchar **)&source, &filesize);
+        glCompileShader(handles[i]);
+        debug(handles[i]);
+        glAttachShader(programs[i], handles[i]);
+        glLinkProgram(programs[i]);
+        
+        glUseProgram(programs[i]);
+        time_locations[i] = glGetUniformLocation(programs[i], "iTime");
+        resolution_locations[i] = glGetUniformLocation(programs[i], "iResolution");
+        scale_locations[i] = glGetUniformLocation(programs[i], "iScale");
+        nbeats_locations[i] = glGetUniformLocation(programs[i], "iNBeats");
+        highscale_locations[i] = glGetUniformLocation(programs[i], "iHighScale");
+    }
+    
     glViewport(0, 0, w, h);
     
     // Set render timer to 60 fps
