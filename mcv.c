@@ -163,7 +163,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             
             SwapBuffers(hdc);
             
-            for(int i=0; i<2; ++i)
+            for(int i=0; i<1; ++i)
             {
                 if(headers[i].dwFlags & WHDR_DONE)
                 {
@@ -179,7 +179,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 //                     float max = -1.;
                     for(int j=0; j<NFFT; ++j)
                         power_spectrum[j] = out[j][0]*out[j][0]+out[j][1]*out[j][1];
-                    for(int j=0; j<NFFT/5; ++j)
+                    for(int j=0; j<NFFT*5/10; ++j)
                     {
                         scale += power_spectrum[j];
 //                         if(power_spectrum[j]>max)max=power_spectrum[j];
@@ -387,7 +387,7 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     // Init sound capture
     WAVEFORMATEX wfx;
     wfx.wFormatTag = WAVE_FORMAT_PCM;     
-    wfx.nChannels = 1;                    
+    wfx.nChannels = 2;                    
     wfx.nSamplesPerSec = samplerate;      
     wfx.wBitsPerSample = 16;                
     wfx.nBlockAlign = wfx.wBitsPerSample * wfx.nChannels / 8;
@@ -404,7 +404,7 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     int bsize = NFFT*wfx.wBitsPerSample*wfx.nChannels/8;
     char * buffers = (char*)malloc(2*bsize);
 
-    for(int i = 0; i < 2; ++i)
+    for(int i = 0; i < 1; ++i)
     {
         printf("Buffer i:\n");
         headers[i].lpData =         buffers+i*bsize;             

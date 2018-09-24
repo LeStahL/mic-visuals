@@ -65,6 +65,20 @@ float mfvnoise(vec2 x, float f0, float f1, float phi)
     return sum;
 }
 
+// compute distance to regular star
+float dstar(vec2 x, float N, vec2 R)
+{
+    float d = pi/N,
+        p0 = acos(x.x/length(x)),
+        p = mod(p0, d),
+        i = mod(round((p-p0)/d),2.);
+    x = length(x)*vec2(cos(p),sin(p));
+    vec2 a = mix(R,R.yx,i),
+    	p1 = a.x*c.xy,
+        ff = a.y*vec2(cos(d),sin(d))-p1;
+   	ff = ff.yx*c.zx;
+    return dot(x-p1,ff)/length(ff);
+}
 
 // compute distance to regular polygon
 float dpoly_min(vec2 x, float N, float R)
@@ -80,36 +94,23 @@ float zextrude(float z, float d2d, float h)
     return min(max(d.x,d.y),0.)+length(max(d,0.));
 }
 
-vec2 scene(vec3 x)
+float cr(vec2 x, float r, float w)
 {
-    x.x += .1*vnoise(x.xy+iTime);
-    float dr = .05, d, dh, h;
-    vec3 y = vec3(mod(x.xy, dr)-.5*dr, x.z), index = x-y;
-    
-    dh = .05*mfvnoise(index.xy-.5*iTime, 8., 100., .45)+.1*iScale*rand(index.xy);
-    h = .1+dh;
-    d = zextrude(y.z, dpoly_min(y.xy, 6., .5*dr), h)-.001;
-    ind = index.xy;
-    
-    float guard = -length(max(abs(y)-vec3(.5*dr*c.xx, 10.),0.));
-        guard = abs(guard)+dr*.1;
-        d = min(d, guard);
-        
-    vec2 sdf = vec2(d, 1.), sda = vec2(x.z, 1.);
-    
-    return mix(sdf, sda, step(sda.x, sdf.x));
+    return abs(length(x)-r)-w;
 }
 
-const float dx = 1.e-3;
-vec3 normal(vec3 x)
+float cs(vec2 x, float r0, float w, float p0, float p1)
 {
-    float s = scene(x).x;
-    return normalize(vec3(scene(x+dx*c.xyy).x-s, scene(x+dx*c.yxy).x-s, scene(x+dx*c.yyx).x-s));
+    float r = length(x), p = acos(x.x/r)*step(0.,x.y)-acos(x.x/r)*step(x.y,0.);
+    p = clamp(p, p0, p1);
+    vec2 y = r0*vec2(cos(p), sin(p));
+    return length(x-y)-w;
 }
 
-vec3 background(vec2 x)
+float b(vec2 x, vec2 a, vec2 b, float w)
 {
-    return c.yyy;
+    vec2 d = b-a;
+    return length(x-mix(a, b, clamp(dot(x-a, d)/dot(d,d), 0., 1.)))-w;
 }
 
 vec2 rot(vec2 x, float p)
@@ -124,6 +125,48 @@ mat3 rot(vec3 p)
            -cp.y*sp.z, cp.x*cp.z-sp.x*sp.y*sp.z, cp.z*sp.x+cp.x*sp.y*sp.z, 
            sp.y, -cp.y*sp.x, cp.x*cp.y);
     return m;
+}
+
+vec2 scene(vec3 x)
+{
+    x.x += .1*vnoise(x.xy+iTime);
+    float dr = .03, d, dh, h;
+    vec3 y = vec3(mod(x.xy, dr)-.5*dr, x.z), index = x-y;
+    
+    vec2 z = (index.xy-c.yx)*(.5);
+    float sd = min(cr(z-.125*c.xy, .125, .04), cs(z+.125*c.xy, .125, .04, -pi/2., pi/2.));
+    sd = min(sd, b(z, -.125*c.yx, .125*c.yx, .04));
+//     sd = abs(sd)-.04;
+    
+    dh = .05*mfvnoise(index.xy-.5*iTime, 8., 100., .45)+.1*iScale*rand(index.xy);
+    h = .1+dh+(.1+iScale*.1)*step(sd,0.);
+    d = zextrude(y.z, dstar(rot(y.xy, 5.*iTime), 5.+5.*round(rand(3.*index.xy)), vec2(.2+.1*rand(2.*index.xy),.4+.1*rand(index.xy))*dr), h)-.001;
+//     float st = rand(index.xy);
+//     if(st > 1.5)
+//         d = zextrude(y.z, dpoly_min(y.xy, 6., .5*dr), h)-.001;
+//     else
+//         
+    ind = index.xy;
+    
+    float guard = -length(max(abs(y)-vec3(.5*dr*c.xx, 20.),0.));
+        guard = abs(guard)+dr*.1;
+        d = min(d, guard);
+        
+    vec2 sdf = vec2(d, 1.+step(sd, 0.)), sda = vec2(x.z, 1.);
+    
+    return mix(sdf, sda, step(sda.x, sdf.x));
+}
+
+const float dx = 1.e-3;
+vec3 normal(vec3 x)
+{
+    float s = scene(x).x;
+    return normalize(vec3(scene(x+dx*c.xyy).x-s, scene(x+dx*c.yxy).x-s, scene(x+dx*c.yyx).x-s));
+}
+
+vec3 background(vec2 x)
+{
+    return c.yyy;
 }
 
 vec3 synthcol(float scale, float phase)
@@ -147,17 +190,17 @@ vec3 synthcol(float scale, float phase)
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
     vec2 uv = fragCoord/iResolution.yy-.5, s;
-    vec3 or = c.yyx, ta = c.yxy, r = c.xyy, u = cross(r, normalize(ta-or)),
+    vec3 or = rot(c.yyx*iTime)*(c.yyx-.2*c.yxy)+.5*c.yxy, ta = c.yxy, r = c.xyy, u = cross(r, normalize(ta-or)),
         rt = ta+uv.x*r+uv.y*u, rd = normalize(rt-or), x, col;
     float d = 0.;
     
-    for(int i=0; i<500; ++i)
+    for(int i=0; i<700; ++i)
     {
         x = or + d * rd;
         s = scene(x);
         
         if(s.x < 1.e-4) break;
-        if(i==499)
+        if(i==699)
         {
             fragColor = vec4(background(uv), 1.);
             return;
@@ -166,12 +209,19 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
         d += s.x;
     }
     
-    vec3 n = normal(x), l = c.yyx, re = normalize(reflect(-l, n)), v = normalize(or-x);
+    vec3 n = normal(x), l = 2.*c.yyx, re = normalize(reflect(-l, n)), v = normalize(or-x);
     
     if(s.y == 1.)
     {
-        vec3 c1 = abs(synthcol(1.5+.5*vnoise(2.*(x.xy)), iNBeats+1.1*ind.x*ind.y)), c2 = abs(synthcol(1.5+.5*vnoise(2.*(x.xy)), iNBeats+ind.x*ind.y));
-        col = .3*c1+.3*c1*dot(l, n)+c2*dot(re,v);
+        vec3 c1 = abs(synthcol(1.5+.5*vnoise(2.*(x.xy)), iNBeats+1.1*ind.x*ind.y)), c2 = .1*abs(synthcol(1.5+.5*vnoise(2.*(x.xy)), iNBeats+ind.x*ind.y));
+        col = .3*c1+.3*c1*abs(dot(l, n))+c2*dot(re,v);
+    }
+    else if(s.y == 2.)
+    {
+        l = c.xxx;
+        vec3 c1 = abs(synthcol(1.5+.5*vnoise(2.*(x.xy)), iNBeats+1.1*ind.x*ind.y+20.)), c2 = abs(synthcol(1.5+.5*vnoise(2.*(x.xy)), iNBeats+ind.x*ind.y+20.));
+        c1 += .1*mfvnoise(x.xz, 1., 100., .45);
+        col = .3*c1+.3*c1*abs(dot(l, n))+c2*dot(re,v);
     }
     
     fragColor = vec4(col, 1.);
