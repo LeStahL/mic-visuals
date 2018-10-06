@@ -138,31 +138,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             break;
             
         case WM_TIMER:
-            HDC hdc = GetDC(hwnd);
-            
-            SYSTEMTIME st_now;
-            GetSystemTime(&st_now);
-            float t_now = (float)st_now.wMinute*60.+(float)st_now.wSecond+(float)st_now.wMilliseconds/1000.;
-            
-            glUniform1f(time_locations[index], t_now-t_start);
-            glUniform2f(resolution_locations[index], w, h);
-            glUniform1f(scale_locations[index], scale);
-            glUniform1f(nbeats_locations[index], nbeats);
-            glUniform1f(highscale_locations[index], highscale);
-            
-            glBegin(GL_QUADS);
-            
-            glVertex3f(-1,-1,0);
-            glVertex3f(-1,1,0);
-            glVertex3f(1,1,0);
-            glVertex3f(1,-1,0);
-            
-            glEnd();
-
-            glFlush();
-            
-            SwapBuffers(hdc);
-            
             for(int i=0; i<1; ++i)
             {
                 if(headers[i].dwFlags & WHDR_DONE)
@@ -203,6 +178,32 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     waveInAddBuffer(wi, &headers[i], sizeof(headers[i]));
                 }
             }
+            
+            HDC hdc = GetDC(hwnd);
+            
+            SYSTEMTIME st_now;
+            GetSystemTime(&st_now);
+            float t_now = (float)st_now.wMinute*60.+(float)st_now.wSecond+(float)st_now.wMilliseconds/1000.;
+            
+            glUniform1f(time_locations[index], t_now-t_start);
+            glUniform2f(resolution_locations[index], w, h);
+            glUniform1f(scale_locations[index], scale);
+            glUniform1f(nbeats_locations[index], nbeats);
+            glUniform1f(highscale_locations[index], highscale);
+            
+            glBegin(GL_QUADS);
+            
+            glVertex3f(-1,-1,0);
+            glVertex3f(-1,1,0);
+            glVertex3f(1,1,0);
+            glVertex3f(1,-1,0);
+            
+            glEnd();
+
+            glFlush();
+            
+            SwapBuffers(hdc);
+            
             break;
             
         default:
