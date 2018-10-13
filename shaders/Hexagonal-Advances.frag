@@ -80,14 +80,6 @@ float dstar(vec2 x, float N, vec2 R)
     return dot(x-p1,ff)/length(ff);
 }
 
-// compute distance to regular polygon
-float dpoly_min(vec2 x, float N, float R)
-{
-    float d = 2.*pi/N,
-        t = mod(acos(x.x/length(x)), d)-.5*d;
-    return R-length(x)*cos(t)/cos(.5*d);
-}
-
 float zextrude(float z, float d2d, float h)
 {
     vec2 d = abs(vec2(min(d2d, 0.),z))-h*c.yx;
@@ -129,31 +121,28 @@ mat3 rot(vec3 p)
 
 vec2 scene(vec3 x)
 {
-    x.x += .1*vnoise(x.xy+iTime);
-    float dr = .03, d, dh, h;
+    
+    float dr = .02, d, dh, h;
     vec3 y = vec3(mod(x.xy, dr)-.5*dr, x.z), index = x-y;
     
     vec2 z = (index.xy-c.yx)*(.5);
     float sd = min(cr(z-.125*c.xy, .125, .04), cs(z+.125*c.xy, .125, .04, -pi/2., pi/2.));
     sd = min(sd, b(z, -.125*c.yx, .125*c.yx, .04));
-//     sd = abs(sd)-.04;
     
-    dh = .05*mfvnoise(index.xy-.5*iTime, 8., 100., .45)+.1*iScale*rand(index.xy);
+    dh = .05*mfvnoise(index.xy-.5*iTime, 8., 100., .45)+.1*clamp(iScale,0.,1.)*rand(index.xy);
     h = .1+dh+(.1+iScale*.1)*step(sd,0.);
     d = zextrude(y.z, dstar(rot(y.xy, 5.*iTime), 5.+5.*round(rand(3.*index.xy)), vec2(.2+.1*rand(2.*index.xy),.4+.1*rand(index.xy))*dr), h)-.001;
-//     float st = rand(index.xy);
-//     if(st > 1.5)
-//         d = zextrude(y.z, dpoly_min(y.xy, 6., .5*dr), h)-.001;
-//     else
-//         
+    
     ind = index.xy;
     
-    float guard = -length(max(abs(y)-vec3(.5*dr*c.xx, 20.),0.));
+    if((sd < 0.) || (x.z < .5))
+    {
+    	float guard = -length(max(abs(y)-vec3(.5*dr*c.xx, .45),0.));
         guard = abs(guard)+dr*.1;
         d = min(d, guard);
-        
-    vec2 sdf = vec2(d, 1.+step(sd, 0.)), sda = vec2(x.z, 1.);
+    }
     
+    vec2 sdf = vec2(d, 1.+step(sd, 0.)), sda = vec2(x.z, 1.);
     return mix(sdf, sda, step(sda.x, sdf.x));
 }
 
@@ -187,45 +176,110 @@ vec3 synthcol(float scale, float phase)
         );
 }
 
+// Stroke
+float stroke(float sdf, float w)
+{
+    return abs(sdf)-w;
+}
+
+// Distance to circle
+float circle(vec2 x, float r)
+{
+    return length(x)-r;
+}
+
+// Distance to circle segment
+float circlesegment(vec2 x, float r, float p0, float p1)
+{
+    float p = atan(x.y, x.x);
+    p = clamp(p, p0, p1);
+    return length(x-r*vec2(cos(p), sin(p)));
+}
+
+// Distance to line segment
+float linesegment(vec2 x, vec2 p0, vec2 p1)
+{
+    vec2 d = p1-p0;
+    float t = clamp(dot(x-p0,d)/dot(d,d),0.,1.);
+    return length(x-mix(p0,p1,t));
+}
+
+// Distance to 210 logo
+float logo(vec2 x, float r)
+{
+    return min(
+        min(circle(x+r*c.zy, r), linesegment(x,r*c.yz, r*c.yx)),
+        circlesegment(x+r*c.xy, r, -.5*pi, .5*pi)
+    );
+}
+
+vec3 stdcolor(vec2 x)
+{
+	return 0.5 + 0.5*cos(iTime+x.xyx+vec3(0,2,4));
+}
+
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
     vec2 uv = fragCoord/iResolution.yy-.5, s;
+    vec2 x0 = uv;
+    uv.x += .1*vnoise(uv+iTime);
     vec3 or = rot(c.yyx*iTime)*(c.yyx-.2*c.yxy)+.5*c.yxy, ta = c.yxy, r = c.xyy, u = cross(r, normalize(ta-or)),
         rt = ta+uv.x*r+uv.y*u, rd = normalize(rt-or), x, col;
-    float d = 0.;
     
-    for(int i=0; i<700; ++i)
+    //Initialize rays with intersection distance of ray and plane above scene
+    float d = -(or.z-.45)/rd.z;
+    
+   	//Interval approximation root solving
+   	float D = -(or.z+.1)/rd.z, dm;
+
+    for(int i=0; i<300; ++i)
     {
         x = or + d * rd;
         s = scene(x);
         
         if(s.x < 1.e-4) break;
-        if(i==699)
+        if(i==299)
         {
-            fragColor = vec4(background(uv), 1.);
+            col = c.xxx*smoothstep(1.5/iResolution.y, -1.5/iResolution.y, stroke(logo(x0-vec2(-.45,.45),.02),.005));
+            fragColor = vec4(col, 1.);
             return;
         }
         
         d += s.x;
     }
-    
+
     vec3 n = normal(x), l = 2.*c.yyx, re = normalize(reflect(-l, n)), v = normalize(or-x);
-    
+    vec3 c1 = stdcolor(uv+2.5*ind.x+iNBeats+round(4.*x.z)), 
+            c2 = stdcolor(uv+3.5*ind.y+iNBeats+round(4.*x.z)), 
+            c3 = stdcolor(uv+3.5*ind.x+iNBeats+round(4.*x.z));
+    float rev = clamp(dot(re,v),-1.,1.), ln = abs(dot(l,n));
     if(s.y == 1.)
     {
-        vec3 c1 = abs(synthcol(1.5+.5*vnoise(2.*(x.xy)), iNBeats+1.1*ind.x*ind.y)), c2 = .1*abs(synthcol(1.5+.5*vnoise(2.*(x.xy)), iNBeats+ind.x*ind.y));
-        col = .3*c1+.3*c1*abs(dot(l, n))+c2*dot(re,v);
+        col = .1*c1*vec3(1.,.3,.3) + .2*c1*vec3(1.,.3,.3)*ln + vec3(1.,1.,.1)*12.*tanh(x.z-.2)*pow(rev,2.*(2.-1.5*clamp(iScale,0.,1.))) + 2.*c1*pow(rev, 8.)+3.*c1*pow(rev, 16.);
+        col = abs(col);
     }
     else if(s.y == 2.)
     {
         l = c.xxx;
-        vec3 c1 = abs(synthcol(1.5+.5*vnoise(2.*(x.xy)), iNBeats+1.1*ind.x*ind.y+20.)), c2 = abs(synthcol(1.5+.5*vnoise(2.*(x.xy)), iNBeats+ind.x*ind.y+20.));
         c1 += .1*mfvnoise(x.xz, 1., 100., .45);
-        col = .3*c1+.3*c1*abs(dot(l, n))+c2*dot(re,v);
+        col = .1*c1*vec3(1.,.3,.3) + .2*c1*vec3(1.,.3,.3)*ln + vec3(1.,1.,.1)*pow(rev,2.*(2.-1.5*clamp(iScale,0.,1.))) + 2.*c1*pow(rev, 8.)+3.*c1*pow(rev, 16.);
+        col = abs(col);
     }
     
-    fragColor = vec4(col, 1.);
+    
+
+    //portability
+    col = 2.*clamp(.33*col, 0., 1.);
+//     col = mix(col, c1*vec3(1.,.3,.3), tanh(1.e-2*length(x-ro)));
+    //210 logo
+    col = mix(clamp(col,c.yyy,c.xxx), c.xxx, smoothstep(1.5/iResolution.y, -1.5/iResolution.y, stroke(logo(x0-vec2(-.45,.45),.02),.005)));
+    //trendy display lines
+    col += vec3(0., 0.05, 0.1)*sin(x0.y*1050.+ 5.*iTime);
+    
+    fragColor = vec4(col,1.0);
 }
+
+
 
 
 void main()

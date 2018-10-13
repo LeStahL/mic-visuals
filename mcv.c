@@ -30,6 +30,8 @@ int _fltused = 0;
 #include <complex.h> 
 #include "fftw3.h"
 
+#include <math.h>
+
 //TODO: remove
 #include <stdio.h>
 
@@ -71,6 +73,8 @@ PFNGLGENFRAMEBUFFERSPROC glGenFramebuffers;
 PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer;
 PFNGLFRAMEBUFFERTEXTURE2DPROC glFramebufferTexture2D;
 PFNGLNAMEDRENDERBUFFERSTORAGEEXTPROC glNamedRenderbufferStorageEXT;
+PFNGLACTIVETEXTUREPROC glActiveTexture;
+PFNGLUNIFORM1IPROC glUniform1i;
 
 void debug(int shader_handle)
 {
@@ -95,17 +99,24 @@ int w = 1920, h = 1080,
     index=0, nfiles=0,
     *handles,*programs,*time_locations,
     *resolution_locations,*scale_locations,*nbeats_locations,
-    *highscale_locations;
+    *highscale_locations, *fft_texture_locations, *fft_width_locations;
     
 //Demo globals
 float t_start = 0., scale = 0., max = -1., nbeats = 0., highscale=0.;
 int samplerate = 44100;
 WAVEHDR headers[2];
 HWAVEIN wi;
+float cutoff = .5;
 
-#define NFFT 512
+//Recording globals
+int double_buffered = 0;
+int buffer_size = 512;
 
 //FFTW3 globals
+#define NFFT 8192
+unsigned int fft_texture_handle;
+int fft_texture_size, fft_texture_location, fft_texture_width_location;
+float values[NFFT];
 fftw_complex *in, *out;
 fftw_plan p;
 float power_spectrum[NFFT];
@@ -134,52 +145,92 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     glUseProgram(programs[index]);
                     printf("index %d", index);
                     break;
+                
+                case VK_CONTROL:
+                    scale = 1.;
+                    nbeats += 1.;
+                    break;
+                    
+                case VK_DOWN:
+                    cutoff = max(cutoff-.1,.1);
+                    break;
+                    
+                case VK_UP:
+                    cutoff = min(cutoff+.1, 1.);
+                    break;
             }
             break;
             
         case WM_TIMER:
-            for(int i=0; i<1; ++i)
+            for(int i=0; i<double_buffered+1; ++i)
             {
                 if(headers[i].dwFlags & WHDR_DONE)
                 {
-                    scale = 0.;
-                    highscale = 0.;
+                    // replace last block in values
+                    for(int j=0; j<NFFT-buffer_size; ++j)
+                        values[j] = values[j+buffer_size];
+                    
+                    for(int j=0; j<buffer_size; ++j)
+                        values[NFFT-buffer_size+j] = ((float)(*(short *)(headers[i].lpData+2*j))/32767.);
+                    
+//                     for(int j=0; j<NFFT; ++j)
+//                         printf("%d %le\n", j, values[j]);
+                    
+                    // fourier transform values
                     for(int j=0; j<NFFT; ++j)
                     {
-                        in[j][0] = ((float)(*(short *)(headers[i].lpData+2*j))/32767.);
+                        int low = max(0, j-10);
+                        int high = min(NFFT, j+10);
+                        in[j][0] = 0.;
+                        for(int k=low; k<high; ++k)
+                            in[j][0] += values[k];
+//                         in[j][0] = values[j];
                         in[j][1] = 0.;
                     }
                     fftw_execute(p);
                     
-//                     float max = -1.;
+                    // compute uniform contents
+                    scale = 0.;
+                    highscale = 0.;
                     for(int j=0; j<NFFT; ++j)
                         power_spectrum[j] = out[j][0]*out[j][0]+out[j][1]*out[j][1];
-                    for(int j=0; j<NFFT*5/10; ++j)
+                    
+                    for(int j=0; j<(int)(cutoff*(float)NFFT); ++j)
                     {
                         scale += power_spectrum[j];
-//                         if(power_spectrum[j]>max)max=power_spectrum[j];
                     }
-                    for(int j=5*NFFT/10; j<NFFT; ++j)
+
+                    for(int j=(int)(cutoff*(float)NFFT); j<NFFT; ++j)
                     {
                         highscale += power_spectrum[j];
                     }
-                    scale*=.5;
+                    
+                    scale/=cutoff*(float)NFFT;
+                    
+                    scale *= 2e3;
+//                     printf("%le %le\n", scale, nbeats);
                     highscale *= .5;
                     
                     if(scale > 5.e-1)
                         nbeats += 1.;
-                    
-//                     printf("nbeats: %le\n", nbeats);
                     
                     headers[i].dwFlags = 0;
                     headers[i].dwBytesRecorded = 0;
 
                     waveInPrepareHeader(wi, &headers[i], sizeof(headers[i]));
                     waveInAddBuffer(wi, &headers[i], sizeof(headers[i]));
+                    
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, fft_texture_size, fft_texture_size, 0, GL_RGBA, GL_BYTE, power_spectrum);
                 }
             }
             
             HDC hdc = GetDC(hwnd);
+            
+            glUniform1i(fft_texture_locations[index], 0);
+            glUniform1f(fft_width_locations[index], fft_texture_size);
+            
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, fft_texture_handle);
             
             SYSTEMTIME st_now;
             GetSystemTime(&st_now);
@@ -312,6 +363,8 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     glBindFramebuffer = (PFNGLBINDFRAMEBUFFERPROC) wglGetProcAddress("glBindFramebuffer");
     glFramebufferTexture2D = (PFNGLFRAMEBUFFERTEXTURE2DPROC) wglGetProcAddress("glFramebufferTexture2D");
     glNamedRenderbufferStorageEXT = (PFNGLNAMEDRENDERBUFFERSTORAGEEXTPROC) wglGetProcAddress("glNamedRenderbufferStorage");
+    glActiveTexture = (PFNGLACTIVETEXTUREPROC) wglGetProcAddress("glActiveTexture");
+    glUniform1i = (PFNGLUNIFORM1IPROC) wglGetProcAddress("glUniform1i");
     
     // Browse shaders folder for shaders
     WIN32_FIND_DATA data;
@@ -340,6 +393,8 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     scale_locations = (int*)malloc(nfiles*sizeof(int));
     nbeats_locations = (int*)malloc(nfiles*sizeof(int));
     highscale_locations = (int*)malloc(nfiles*sizeof(int));
+    fft_texture_locations = (int*)malloc(nfiles*sizeof(int));
+    fft_width_locations = (int*)malloc(nfiles*sizeof(int));
     for(int i=0; i<nfiles; ++i)
     {
         printf("Loading Shader %d\n", i);
@@ -367,10 +422,23 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
         scale_locations[i] = glGetUniformLocation(programs[i], "iScale");
         nbeats_locations[i] = glGetUniformLocation(programs[i], "iNBeats");
         highscale_locations[i] = glGetUniformLocation(programs[i], "iHighScale");
+        fft_texture_locations[i] = glGetUniformLocation(programs[i], "iFFT");
+        fft_width_locations[i] = glGetUniformLocation(programs[i], "iFFTWidth");
     }
     
     glUseProgram(programs[0]);
     glViewport(0, 0, w, h);
+    
+    // Initialize FFT texture
+    fft_texture_size = (int)log2(NFFT)+1;
+    printf("fft texture width is: %d\n", fft_texture_size);
+    glGenTextures(1, &fft_texture_handle);
+    glBindTexture(GL_TEXTURE_2D, fft_texture_handle);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, fft_texture_size, fft_texture_size, 0, GL_RGBA, GL_BYTE, (short*)power_spectrum);
     
     // Set render timer to 60 fps
     UINT_PTR t = SetTimer(hwnd, 1, 1000./60., NULL);
@@ -387,10 +455,10 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     
     // Init sound capture
     WAVEFORMATEX wfx;
-    wfx.wFormatTag = WAVE_FORMAT_PCM;     
+    wfx.wFormatTag = WAVE_FORMAT_PCM;
     wfx.nChannels = 2;                    
-    wfx.nSamplesPerSec = samplerate;      
-    wfx.wBitsPerSample = 16;                
+    wfx.nSamplesPerSec = samplerate;
+    wfx.wBitsPerSample = 16;
     wfx.nBlockAlign = wfx.wBitsPerSample * wfx.nChannels / 8;
     wfx.nAvgBytesPerSec = wfx.nBlockAlign * wfx.nSamplesPerSec;
     
@@ -402,10 +470,14 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
               );
     printf("WaveInOpen: %d\n", result);
     
-    int bsize = NFFT*wfx.wBitsPerSample*wfx.nChannels/8;
-    char * buffers = (char*)malloc(2*bsize);
-
-    for(int i = 0; i < 1; ++i)
+    int bsize = buffer_size*wfx.wBitsPerSample*wfx.nChannels/8;
+    char * buffers;
+    if(double_buffered == 1)
+        buffers = (char*)malloc(2*bsize);
+    else
+        buffers = (char*)malloc(bsize);
+    
+    for(int i = 0; i < double_buffered+1; ++i)
     {
         printf("Buffer i:\n");
         headers[i].lpData =         buffers+i*bsize;             
@@ -418,6 +490,9 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     
     result = waveInStart(wi);
     printf("WaveInStart: %d\n", result);
+    
+    for(int i=0; i<NFFT; ++i)
+        values[i] = 0.;
     
     // Main loop
     MSG msg;

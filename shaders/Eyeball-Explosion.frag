@@ -26,7 +26,7 @@ uniform float iNBeats;
 uniform float iHighScale;
  
 const float pi = acos(-1.);
-const vec2 c = vec2(1.,0.);
+const vec3 c = vec3(1.,0.,-1.);
 
 float rand(vec2 a0)
 {
@@ -125,9 +125,49 @@ vec4 add2(vec4 sdf, vec4 sda)
     );
 }
 
+// Stroke
+float stroke(float sdf, float w)
+{
+    return abs(sdf)-w;
+}
+
+// Distance to circle
+float circle(vec2 x, float r)
+{
+    return length(x)-r;
+}
+
+// Distance to circle segment
+float circlesegment(vec2 x, float r, float p0, float p1)
+{
+    float p = atan(x.y, x.x);
+    p = clamp(p, p0, p1);
+    return length(x-r*vec2(cos(p), sin(p)));
+}
+
+// Distance to line segment
+float linesegment(vec2 x, vec2 p0, vec2 p1)
+{
+    vec2 d = p1-p0;
+    float t = clamp(dot(x-p0,d)/dot(d,d),0.,1.);
+    return length(x-mix(p0,p1,t));
+}
+
+// Distance to 210 logo
+float logo(vec2 x, float r)
+{
+    return min(
+        min(circle(x+r*c.zy, r), linesegment(x,r*c.yz, r*c.yx)),
+        circlesegment(x+r*c.xy, r, -.5*pi, .5*pi)
+    );
+}
+
+
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
-    vec2 uv = fragCoord/iResolution.yy-.5-.33*c.xy;
+    vec2 uv = fragCoord/iResolution.yy-.5;
+    vec2 x0 = uv;
+    uv -= .33*c.xy;
     uv = rot(uv, .25*iTime);
     
     vec4 sdf = vec4(0., c.yyy);
@@ -165,6 +205,11 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 
     vec3 col = sdf.gba*smoothstep(1.5/iResolution.y, -1.5/iResolution.y, sdf.x);
 
+    //small 210 logo
+    col = mix(clamp(col,c.yyy,c.xxx), c.xxx, smoothstep(1.5/iResolution.y, -1.5/iResolution.y, stroke(logo(x0-vec2(-.45,.45),.02),.005)));
+    //trendy display lines
+    col += vec3(0., 0.05, 0.1)*sin(x0.y*1050.+ 5.*iTime);
+    
     fragColor = vec4(col,1.0);
 }
 
