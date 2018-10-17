@@ -197,17 +197,17 @@ float value(float i)
 {
 //     i /= iFFTWidth;
     //convert 1d index to 2d index and map to texture coordinates
-    vec2 ixy = vec2(floor(i/iFFTWidth), mod(i, iFFTWidth))/iFFTWidth;
+    vec2 ixy = vec2(floor(i/iFFTWidth), mod(i, iFFTWidth));
     //rescale to normal values
-    return dot(texture(iFFT, ixy.yx), vec4(5.960464477539063e-8, 1.1920928955078125e-7, 0.00390625, 1.));
+    return dot(texture(iFFT, ixy.yx/iFFTWidth), vec4(5.960464477539063e-8, 0.0000152587890625, 0.00390625, 1.));
 }
 
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
     vec2 uv = fragCoord/iResolution.yy-.5;
-    float v = value(iFFTWidth*iFFTWidth*(uv.x));
-    vec3 col = step(0., 3.*v-uv.y-1.6)*c.xyy;
-    
+    float v = value(iFFTWidth*iFFTWidth*(uv.x+.5));
+    vec3 col = step(0., 2.*v-uv.y-.5)*c.xyy;
+//     vec3 col = c.xyy * dot(texture(iFFT, uv+.5),vec4(5.960464477539063e-8, 0.0000152587890625, 0.00390625, 1.));
     /*vec4 s;
     //if(iTime < 20.)
     {

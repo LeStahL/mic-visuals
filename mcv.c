@@ -106,14 +106,14 @@ float t_start = 0., scale = 0., max = -1., nbeats = 0., highscale=0.;
 int samplerate = 44100;
 WAVEHDR headers[2];
 HWAVEIN wi;
-float cutoff = .5;
+int cutoff = 8;
 
 //Recording globals
 int double_buffered = 0;
 int buffer_size = 512;
 
 //FFTW3 globals
-#define NFFT 8192
+#define NFFT 2048
 unsigned int fft_texture_handle;
 int fft_texture_size, fft_texture_location, fft_texture_width_location;
 float values[NFFT];
@@ -152,11 +152,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     break;
                     
                 case VK_DOWN:
-                    cutoff = max(cutoff-.1,.1);
+                    cutoff = max(cutoff*3/4,3);
                     break;
                     
                 case VK_UP:
-                    cutoff = min(cutoff+.1, 1.);
+                    cutoff = min(cutoff*4/3, NFFT-1);
                     break;
             }
             break;
@@ -171,6 +171,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                         values[j] = values[j+buffer_size];
                     
                     for(int j=0; j<buffer_size; ++j)
+//                         values[NFFT-buffer_size+j] = ((float*)headers[i].lpData)[j];
                         values[NFFT-buffer_size+j] = ((float)(*(short *)(headers[i].lpData+2*j))/32767.);
                     
 //                     for(int j=0; j<NFFT; ++j)
@@ -179,12 +180,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     // fourier transform values
                     for(int j=0; j<NFFT; ++j)
                     {
-                        int low = max(0, j-10);
-                        int high = min(NFFT, j+10);
-                        in[j][0] = 0.;
-                        for(int k=low; k<high; ++k)
-                            in[j][0] += values[k];
-//                         in[j][0] = values[j];
+//                         int low = max(0, j-10);
+//                         int high = min(NFFT, j+10);
+//                         in[j][0] = 0.;
+//                         for(int k=low; k<high; ++k)
+//                             in[j][0] += values[k] * (.54 - .46*cos(2.*acos(-1.)*(float)k/(float)NFFT));
+                        in[j][0] = values[j] * (.54 - .46*cos(2.*acos(-1.)*(float)j/((float)NFFT-1.)));
                         in[j][1] = 0.;
                     }
                     fftw_execute(p);
@@ -192,26 +193,43 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     // compute uniform contents
                     scale = 0.;
                     highscale = 0.;
+                    float pmax = 0., pmin = 1.e9;
                     for(int j=0; j<NFFT; ++j)
+                    {
                         power_spectrum[j] = out[j][0]*out[j][0]+out[j][1]*out[j][1];
+                        pmax = max(pmax, power_spectrum[j]);
+                        pmin = min(pmin, power_spectrum[j]);
+//                         pm += power_spectrum[j];
+                    }
+                    for(int j=0; j<NFFT; ++j)
+                    {
+                        power_spectrum[j] -= pmin;
+                        power_spectrum[j] = max(power_spectrum[j], 0.);
+                        power_spectrum[j] = min(power_spectrum[j], 1.);
+                        //power_spectrum[j] /= (pmax-pmin);
+//                         printf("%le\n", power_spectrum[j]);
+                    }
                     
-                    for(int j=0; j<(int)(cutoff*(float)NFFT); ++j)
+                    for(int j=0; j<cutoff; ++j)
                     {
                         scale += power_spectrum[j];
                     }
 
-                    for(int j=(int)(cutoff*(float)NFFT); j<NFFT; ++j)
+                    for(int j=cutoff; j<NFFT; ++j)
                     {
                         highscale += power_spectrum[j];
                     }
                     
-                    scale/=cutoff*(float)NFFT;
+//                     scale/=(float)cutoff;
+//                     highscale/=(float)(NFFT-cutoff);
                     
-                    scale *= 2e3;
-//                     printf("%le %le\n", scale, nbeats);
-                    highscale *= .5;
+//                     scale *= 1.e2;
+//                     highscale *= 1.e2;
+//                     scale *= 2e1;
+//                     printf("%le %le\n", scale, .5);
+//                     highscale *= .5;
                     
-                    if(scale > 5.e-1)
+                    if(scale > .5)
                         nbeats += 1.;
                     
                     headers[i].dwFlags = 0;
@@ -220,10 +238,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     waveInPrepareHeader(wi, &headers[i], sizeof(headers[i]));
                     waveInAddBuffer(wi, &headers[i], sizeof(headers[i]));
                     
-                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, fft_texture_size, fft_texture_size, 0, GL_RGBA, GL_BYTE, power_spectrum);
+                    
                 }
             }
-            
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, fft_texture_size, fft_texture_size, 0, GL_RGBA, GL_FLOAT, power_spectrum);
             HDC hdc = GetDC(hwnd);
             
             glUniform1i(fft_texture_locations[index], 0);
@@ -456,7 +474,7 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     // Init sound capture
     WAVEFORMATEX wfx;
     wfx.wFormatTag = WAVE_FORMAT_PCM;
-    wfx.nChannels = 2;                    
+    wfx.nChannels = 1;                    
     wfx.nSamplesPerSec = samplerate;
     wfx.wBitsPerSample = 16;
     wfx.nBlockAlign = wfx.wBitsPerSample * wfx.nChannels / 8;
