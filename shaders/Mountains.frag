@@ -129,6 +129,20 @@ float valuenoise(vec3 x)
         
 }
 
+float mfvaluenoise(vec2 x, float fmin, float fmax, float phi)
+{
+    float sum = 0.;
+    float a = 1.;
+    
+    for(float f = fmin; f<fmax; f = f*2.)
+    {
+        sum += a*valuenoise(f*x);
+        a = a*phi;
+    }
+    
+    return sum;
+}
+
 // add object to scene
 vec2 add(vec2 sda, vec2 sdb)
 {
@@ -216,29 +230,38 @@ mat3 rot(vec3 p)
 //BUILD A WORLD
 //THEN BREAK IT
 vec3 ind;
-vec2 scene(vec3 x)
+vec2 scene(vec3 x) // water
 {
-    //displacement
-    vec2 dis = 12.*vec2((.1+.05*iScale)*valuenoise(x-2.-1.e-1*iTime),(.1+.05*iScale)*valuenoise(x.xy-5.-1.e-1*iTime));
+    x += iTime*c.yxy*1.e-1;
     
-    //city
-    vec3 v = vor(7.*x.xy-iNBeats-dis);
-//     float h = .3*clamp(iScale, 0., 1.)*valuenoise(v.yz+1.);
-    float h = .4*rand(v.yz+7.+iNBeats)+.2*valuenoise(v.yz+7.+iNBeats)*clamp(5.*iScale, 0., 1.)+.1*valuenoise(v.yz-.4*iTime);
-    float d = stroke(zextrude(x.z+.1-.2*x.y, stroke(v.x,.15+.15*clamp(3.*iScale, 0., 1.)), h),.1);
-
+    vec2 dis = 12.*vec2((.1+.05*iScale)*valuenoise(x-2.-2.e-1*iTime),(.1+.05*iScale)*valuenoise(x.xy-5.-2.e-1*iTime));
+    float d = x.z - .5*mfvaluenoise(x.xy-dis, 2., 20., .45+.2*clamp(3.*iScale, 0., 1.));
+    
     //artificial guards for artifacts
-    float dr = .065;
+    float dr = .165;
     vec3 y = mod(x, dr)-.5*dr;
     float guard = -length(max(abs(y)-vec3(.5*dr*c.xx, .6),0.));
     guard = abs(guard)+dr*.1;
     d = min(d, guard);
     
-    //coloring
-    ind = vec3(v.yz, 0.);
+    return vec2(d, 1.);
+}
 
-    //floor
-    return add(vec2(d, 1.), vec2(x.z, 2.));
+vec2 scene2(vec3 x) // tentacles
+{
+    x += iTime*c.yxy*1.e-2;
+    
+    vec2 dis = 12.*vec2((.1+.05*iScale)*valuenoise(x-2.-1.e-1*iTime),(.1+.05*iScale)*valuenoise(x.xy-5.-1.e-1*iTime));
+    float d = x.z - mfvaluenoise(x.xy-dis, 6., 20., .45+.2*clamp(3.*iScale, 0., 1.));
+    
+    //artificial guards for artifacts
+    float dr = .165;
+    vec3 y = mod(x, dr)-.5*dr;
+    float guard = -length(max(abs(y)-vec3(.5*dr*c.xx, .6),0.));
+    guard = abs(guard)+dr*.1;
+    d = min(d, guard);
+    
+    return vec2(d, 1.);
 }
 
 vec3 stdcolor(vec2 x)
@@ -393,7 +416,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     	vec3 ro, r, u, t, x, dir;
     	camerasetup(camera1, ro, r, u, t, uv, dir);
     	
-        float d = -(ro.z-.5-.3*clamp(5.*iScale,0.,1.))/dir.z;
+        float d = -(ro.z-1.)/dir.z;
     
         bool hit;
         vec2 s;
@@ -413,14 +436,14 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
         
         col = color(rev, ln, s.y, uv, x);
         
-        for(float i = .7; i >= .3; i -= .2)
+        for(float i = .7; i >= .5; i -= .2)
         {
             //reflections
             dir = normalize(reflect(dir, n));
-            //dir = normalize(refract(dir, n, .8));
-            d = 5.e-3;
+//             dir = normalize(refract(dir, n, i));
+            d = 5.e-2;
             ro = x;
-            raymarch(scene, x, ro, d, dir, s, 50, 5.e-4, hit);
+            raymarch(scene, x, ro, d, dir, s, 300, 5.e-4, hit);
             if(hit == false)
             {
                 post(col, uv);

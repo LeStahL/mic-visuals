@@ -18,6 +18,7 @@
 int _fltused = 0;
 
 #define ABS(x) ((x)<0?(-x):(x))
+#define sign(x) ((x)<0?-1.:1.)
 
 #define WIN32_LEAN_AND_MEAN
 #define VC_EXTRALEAN
@@ -106,14 +107,15 @@ float t_start = 0., scale = 0., max = -1., nbeats = 0., highscale=0.;
 int samplerate = 44100;
 WAVEHDR headers[2];
 HWAVEIN wi;
-int cutoff = 8;
+int cutoff = 8, lastchange = 0;
+float oldscale = 0., ooldscale = 0.;
 
 //Recording globals
-int double_buffered = 0;
+int double_buffered = 1;
 int buffer_size = 512;
 
 //FFTW3 globals
-#define NFFT 2048
+#define NFFT 8192
 unsigned int fft_texture_handle;
 int fft_texture_size, fft_texture_location, fft_texture_width_location;
 float values[NFFT];
@@ -156,7 +158,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     break;
                     
                 case VK_UP:
-                    cutoff = min(cutoff*4/3, NFFT-1);
+                    cutoff = min(cutoff*4/3, NFFT-3);
                     break;
             }
             break;
@@ -166,6 +168,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             {
                 if(headers[i].dwFlags & WHDR_DONE)
                 {
+                    ooldscale = oldscale;
+                    oldscale = scale;
+                    
                     // replace last block in values
                     for(int j=0; j<NFFT-buffer_size; ++j)
                         values[j] = values[j+buffer_size];
@@ -187,6 +192,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 //                             in[j][0] += values[k] * (.54 - .46*cos(2.*acos(-1.)*(float)k/(float)NFFT));
                         in[j][0] = values[j] * (.54 - .46*cos(2.*acos(-1.)*(float)j/((float)NFFT-1.)));
                         in[j][1] = 0.;
+                        in[NFFT+j][0] = 0.;
+                        in[NFFT+j][1] = 0.;
+                        in[2*NFFT+j][0] = 0.;
+                        in[2*NFFT+j][1] = 0.;
+                        in[3*NFFT+j][0] = 0.;
+                        in[3*NFFT+j][1] = 0.;
                     }
                     fftw_execute(p);
                     
@@ -219,19 +230,24 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     {
                         highscale += power_spectrum[j];
                     }
-                    
+
 //                     scale/=(float)cutoff;
 //                     highscale/=(float)(NFFT-cutoff);
                     
 //                     scale *= 1.e2;
 //                     highscale *= 1.e2;
 //                     scale *= 2e1;
-//                     printf("%le %le\n", scale, .5);
+//                     printf("%le %le\n", scale, oldscale );
 //                     highscale *= .5;
                     
-                    if(scale > .5)
+//                     if(scale <1.e-3*(float)cutoff && scale + power_spectrum[cutoff] > 1.e-3*(float)cutoff)
+                    if((sign(scale-oldscale) != sign(oldscale - ooldscale)))
+                    {
                         nbeats += 1.;
-                    
+                        lastchange = 0;
+                    }
+                    else
+                        ++lastchange;
                     headers[i].dwFlags = 0;
                     headers[i].dwBytesRecorded = 0;
 
@@ -467,9 +483,9 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     t_start = (float)st_start.wMinute*60.+(float)st_start.wSecond+(float)st_start.wMilliseconds/1000.;
     
     //FFTW3 Setup
-    in = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * NFFT);
-    out = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * NFFT);
-    p = fftw_plan_dft_1d(NFFT, in, out, FFTW_FORWARD, FFTW_ESTIMATE);
+    in = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * NFFT * 4);
+    out = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * NFFT * 4);
+    p = fftw_plan_dft_1d(NFFT * 4, in, out, FFTW_FORWARD, FFTW_ESTIMATE);
     
     // Init sound capture
     WAVEFORMATEX wfx;
