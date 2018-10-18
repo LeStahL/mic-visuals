@@ -241,10 +241,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 //                     highscale *= .5;
                     
 //                     if(scale <1.e-3*(float)cutoff && scale + power_spectrum[cutoff] > 1.e-3*(float)cutoff)
-                    if((sign(scale-oldscale) != sign(oldscale - ooldscale)))
+                    if((sign(scale-oldscale) != sign(oldscale - ooldscale)) && ((scale - ooldscale) < 0.))
                     {
-                        nbeats += 1.;
-                        lastchange = 0;
+                        if(lastchange > 6.)
+                        {
+                            nbeats += 1.;
+                            lastchange = 0;
+                        }
+                        else ++lastchange;
                     }
                     else
                         ++lastchange;
