@@ -36,6 +36,9 @@ int _fltused = 0;
 //TODO: remove
 #include <stdio.h>
 
+//fonts
+#include "Kavoon-Regular.h"
+
 // Standard library and CRT rewrite for saving executable size
 void *memset(void *ptr, int value, size_t num)
 {
@@ -100,7 +103,9 @@ int w = 1920, h = 1080,
     index=0, nfiles=0,
     *handles,*programs,*time_locations,
     *resolution_locations,*scale_locations,*nbeats_locations,
-    *highscale_locations, *fft_texture_locations, *fft_width_locations;
+    *highscale_locations, *fft_texture_locations, *fft_width_locations,
+    *font_texture_locations, *font_width_locations;
+
     
 //Demo globals
 float t_start = 0., scale = 0., max = -1., nbeats = 0., highscale=0.;
@@ -115,9 +120,10 @@ int double_buffered = 1;
 int buffer_size = 512;
 
 //FFTW3 globals
-#define NFFT 8192
-unsigned int fft_texture_handle;
+#define NFFT 4096
+unsigned int fft_texture_handle, font_texture_handle;
 int fft_texture_size, fft_texture_location, fft_texture_width_location;
+int font_texture_location, font_texture_width_location;
 float values[NFFT];
 fftw_complex *in, *out;
 fftw_plan p;
@@ -261,17 +267,43 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     
                 }
             }
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, fft_texture_size, fft_texture_size, 0, GL_RGBA, GL_FLOAT, power_spectrum);
-            HDC hdc = GetDC(hwnd);
-            
+//             printf("Mic done.\n");
             glUniform1i(fft_texture_locations[index], 0);
-            glUniform1f(fft_width_locations[index], fft_texture_size);
+            glUniform1f(fft_width_locations[index], fft_texture_size); 
+            
+            glUniform1i(font_texture_locations[index], 1);
+            glUniform1f(font_width_locations[index], font_texture_size);
+//             printf("Uniform done.\n");
             
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, fft_texture_handle);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, fft_texture_size, fft_texture_size, 0, GL_RGBA, GL_FLOAT, power_spectrum);
+//             printf("Texture1 Done.\n");
+//             glBindTexture(GL_TEXTURE_2D, fft_texture_handle);
+//             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+//             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+//             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+//             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
             
+            
+//             glActiveTexture(0);
+//             glBindTexture(GL_TEXTURE_2D, 0);
+            
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, font_texture_handle);
+//             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, font_texture_size, font_texture_size, 0, GL_RGBA, GL_BYTE, font_texture);
+//             printf("Texture2 done.\n");
+//             glBindTexture(GL_TEXTURE_2D, font_texture_handle);
+//             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+//             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+//             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+//             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+            
+            
+            HDC hdc = GetDC(hwnd);
+                 
             SYSTEMTIME st_now;
-            GetSystemTime(&st_now);
+            GetSystemTime(&st_now);            
             float t_now = (float)st_now.wMinute*60.+(float)st_now.wSecond+(float)st_now.wMilliseconds/1000.;
             
             glUniform1f(time_locations[index], t_now-t_start);
@@ -433,6 +465,8 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     highscale_locations = (int*)malloc(nfiles*sizeof(int));
     fft_texture_locations = (int*)malloc(nfiles*sizeof(int));
     fft_width_locations = (int*)malloc(nfiles*sizeof(int));
+    font_texture_locations = (int*)malloc(nfiles*sizeof(int));
+    font_width_locations = (int*)malloc(nfiles*sizeof(int));
     for(int i=0; i<nfiles; ++i)
     {
         printf("Loading Shader %d\n", i);
@@ -462,6 +496,8 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
         highscale_locations[i] = glGetUniformLocation(programs[i], "iHighScale");
         fft_texture_locations[i] = glGetUniformLocation(programs[i], "iFFT");
         fft_width_locations[i] = glGetUniformLocation(programs[i], "iFFTWidth");
+        font_texture_locations[i] = glGetUniformLocation(programs[i], "iFont");
+        font_width_locations[i] = glGetUniformLocation(programs[i], "iFontWidth");
     }
     
     glUseProgram(programs[0]);
@@ -476,7 +512,17 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, fft_texture_size, fft_texture_size, 0, GL_RGBA, GL_BYTE, (short*)power_spectrum);
+//     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, fft_texture_size, fft_texture_size, 0, GL_RGBA, GL_FLOAT, (short*)power_spectrum);
+    
+    // Initialize font texture
+    printf("font texture width is: %d\n", font_texture_size);
+    glGenTextures(1, &font_texture_handle);
+    glBindTexture(GL_TEXTURE_2D, font_texture_handle);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, font_texture_size, font_texture_size, 0, GL_RGBA, GL_BYTE, font_texture);
     
     // Set render timer to 60 fps
     UINT_PTR t = SetTimer(hwnd, 1, 1000./60., NULL);

@@ -24,8 +24,10 @@ uniform vec2 iResolution;
 uniform float iScale;
 uniform float iNBeats;
 uniform float iHighScale;
-uniform sampler2D iFFT;
 uniform float iFFTWidth;
+uniform float iFontWidth;
+uniform sampler2D iFFT;
+uniform sampler2D iFont;
 
 /*************************************/
 /** Constants and utility functions **/
@@ -199,7 +201,18 @@ float value(float i)
     //convert 1d index to 2d index and map to texture coordinates
     vec2 ixy = vec2(floor(i/iFFTWidth), mod(i, iFFTWidth));
     //rescale to normal values
+    //(1) get sign bit
+    vec4 f = texture(iFFT, ixy/iFFTWidth);
+    bool sign = (1 == (f.x & 1));
+//     float exponent = 
     return dot(texture(iFFT, ixy.yx/iFFTWidth), vec4(5.960464477539063e-8, 0.0000152587890625, 0.00390625, 1.));
+}
+
+float dletter(float ord)
+{
+    //find letter in index
+    float offset = 0., length = 0., nglyphs = dot(texture(iFont, c.yy).xy,255.*c.xyyy);
+    
 }
 
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
@@ -224,7 +237,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     
     col += vec3(0., 0.05, 0.1)*sin(uv.y*1050.+ 5.*iTime);
 */
-    fragColor = vec4(col,1.0);
+    fragColor = vec4(col,1.0)+texture(iFont, uv+.5);
 }
 
 void main()

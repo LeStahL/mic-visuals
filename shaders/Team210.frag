@@ -85,6 +85,14 @@ vec3 vor(vec2 x)
     return vec3(ret, pf);
 }
 
+//1D value noise
+float valuenoise(float x)
+{
+    float y = floor(x);
+    x = fract(x);
+    return mix( -1.+2.*rand(y*c.xx), -1.+2.*rand(y*c.xx+1.), smoothstep(0., 1., x));
+}
+
 // 2D value noise
 float valuenoise(vec2 x)
 {
@@ -227,50 +235,6 @@ mat3 rot(vec3 p)
         *mat3(cos(p.z), -sin(p.z), 0., sin(p.z), cos(p.z), c.yyyx);
 }
 
-//BUILD A WORLD
-//THEN BREAK IT
-vec3 ind;
-vec2 scene(vec3 x) // water
-{
-    x += iTime*c.yxy*1.e-1;
-    
-    vec2 dis = 12.*vec2((.1+.05*iScale)*valuenoise(x-2.-2.e-1*iTime),(.1+.05*iScale)*valuenoise(x.xy-5.-2.e-1*iTime));
-    float d = x.z - mfvaluenoise(x.xy-dis, 2., 40., .45+.2*clamp(3.*iScale, 0., 1.));
-    d = max(d, -.5*mfvaluenoise(x.xy-dis, 2., 10., .45+.2*clamp(3.*iScale,0., 1.)));
-   
-//     d = max(d, -mfvaluenoise(x.xy-dis, 50., 100., .45+.2*clamp(3.*iScale, 0.,1.)));
-    //artificial guards for artifacts
-    float dr = .165;
-    vec3 y = mod(x, dr)-.5*dr;
-    float guard = -length(max(abs(y)-vec3(.5*dr*c.xx, .6),0.));
-    guard = abs(guard)+dr*.1;
-    d = min(d, guard);
-    
-    return vec2(d, 1.);
-}
-
-vec2 scene2(vec3 x) // tentacles
-{
-    x += iTime*c.yxy*1.e-2;
-    
-    vec2 dis = 12.*vec2((.1+.05*iScale)*valuenoise(x-2.-1.e-1*iTime),(.1+.05*iScale)*valuenoise(x.xy-5.-1.e-1*iTime));
-    float d = x.z - mfvaluenoise(x.xy-dis, 6., 20., .45+.2*clamp(3.*iScale, 0., 1.));
-    
-    //artificial guards for artifacts
-    float dr = .165;
-    vec3 y = mod(x, dr)-.5*dr;
-    float guard = -length(max(abs(y)-vec3(.5*dr*c.xx, .6),0.));
-    guard = abs(guard)+dr*.1;
-    d = min(d, guard);
-    
-    return vec2(d, 1.);
-}
-
-vec3 stdcolor(vec2 x)
-{
-	return 0.5 + 0.5*cos(iTime+x.xyx+vec3(0,2,4));
-}
-
 // Distance to circle
 float circle(vec2 x, float r)
 {
@@ -300,6 +264,71 @@ float logo(vec2 x, float r)
         min(circle(x+r*c.zy, r), linesegment(x,r*c.yz, r*c.yx)),
         circlesegment(x+r*c.xy, r, -.5*pi, .5*pi)
     );
+}
+
+vec3 torsion(vec3 x, float p)
+{
+    float c = cos(p*x.z);
+    float s = sin(p*x.z);
+    mat2  m = mat2(c,-s,s,c);
+    return vec3(m*x.xy,x.z);
+}
+
+//BUILD A WORLD
+//THEN BREAK IT
+vec3 ind;
+vec2 scene(vec3 x) // water
+{
+//     x += iTime*c.yxy*1.e-1;
+//     float dis = valuenoise(x-2.-2.e-1*iTime);
+
+    float za = .5;
+    vec3 dis = .1*vec3(valuenoise(4.*x.x-1.e-1*iTime-1.),valuenoise(3.*x.y-1.e-1*iTime-2.),valuenoise(x.z-1.e-1*iTime-3.))+3.*vec3((.1+.05*iScale)*valuenoise(x-2.-2.e-1*iTime),(.1+.05*iScale)*valuenoise(x.xy-5.-2.e-1*iTime),(.1+.05*iScale)*valuenoise(x-2.-2.e-1*iTime)), 
+        dz = .1*vec3(valuenoise(4.*x.x-1.e-1*iTime-1.),valuenoise(3.*x.y-1.e-1*iTime-2.),valuenoise(za-1.e-1*iTime-3.))+3.*vec3((.1+.05*iScale)*valuenoise(vec3(x.xy, za)-2.-2.e-1*iTime),(.1+.05*iScale)*valuenoise(x.xy-5.-2.e-1*iTime),(.1+.05*iScale)*valuenoise(vec3(x.xy, za)-2.-2.e-1*iTime));
+//     x = torsion(x-c.yxy-dis, 3.e-2*sin(iTime-3.*x.z));
+    //dis *= (1.-tanh(x.z/.5));
+    //dz *= (1.-tanh(za/.5));
+    dis *= sin(x.z/.5);
+    dz *= sin(za/.5);
+    float d = zextrude(x.z-dis.z, -stroke(logo(x.xy-c.yx-dis.xy, .2), .05), 1.2);
+    
+//     d = max(d, x.z - mfvaluenoise(x.xy-dis, 2., 40., .45+.2*clamp(3.*iScale, 0., 1.)));
+    d = max(d, -mfvaluenoise(x.xy-dis.xy, 20., 100., .45+.2*clamp(3.*iScale,0., 1.)));
+    d = max(d, x.z-.5);
+   
+    d = min(d, zextrude(x.z-za, -stroke(logo(x.xy-c.yx-dz.xy, .2), .05), .01));
+    
+//     d = max(d, -mfvaluenoise(x.xy-dis, 50., 100., .45+.2*clamp(3.*iScale, 0.,1.)));
+    //artificial guards for artifacts
+    float dr = .155;
+    vec3 y = mod(x, dr)-.5*dr;
+    float guard = -length(max(abs(y)-vec3(.5*dr*c.xx, .6),0.));
+    guard = abs(guard)+dr*.1;
+    d = min(d, guard);
+    
+    return vec2(d, 1.);
+}
+
+vec2 scene2(vec3 x) // tentacles
+{
+    x += iTime*c.yxy*1.e-2;
+    
+    vec2 dis = 12.*vec2((.1+.05*iScale)*valuenoise(x-2.-1.e-1*iTime),(.1+.05*iScale)*valuenoise(x.xy-5.-1.e-1*iTime));
+    float d = x.z - mfvaluenoise(x.xy-dis, 6., 20., .45+.2*clamp(3.*iScale, 0., 1.));
+    
+    //artificial guards for artifacts
+    float dr = .35;
+    vec3 y = mod(x, dr)-.5*dr;
+    float guard = -length(max(abs(y)-vec3(.5*dr*c.xx, .6),0.));
+    guard = abs(guard)+dr*.1;
+    d = min(d, guard);
+    
+    return vec2(abs(d), 1.);
+}
+
+vec3 stdcolor(vec2 x)
+{
+	return 0.5 + 0.5*cos(iTime+x.xyx+vec3(0,2,4));
 }
 
 //performs raymarching
@@ -422,7 +451,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     
         bool hit;
         vec2 s;
-        raymarch(scene, x, ro, d, dir, s, 300, 1.e-4, hit);
+        raymarch(scene, x, ro, d, dir, s, 600, 1.e-4, hit);
         if(hit == false)
         {
             post(col, uv);
@@ -443,9 +472,9 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
             //reflections
             dir = normalize(reflect(dir, n));
 //             dir = normalize(refract(dir, n, i));
-            d = 5.e-1;
+            d = 5.e-2;
             ro = x;
-            raymarch(scene, x, ro, d, dir, s, 300, 5.e-3, hit);
+            raymarch(scene, x, ro, d, dir, s, 100, 5.e-4, hit);
             if(hit == false)
             {
                 post(col, uv);
